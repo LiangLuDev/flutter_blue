@@ -28,17 +28,22 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.location.LocationManager;
 import android.os.Build;
 import android.os.ParcelUuid;
 import android.util.Log;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
+import com.pauldemarco.flutter_blue.reflect.MethodUtils;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import androidx.core.app.ActivityCompat;
@@ -70,6 +75,7 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
     private static final String NAMESPACE = "plugins.pauldemarco.com/flutter_blue";
 
     private EventChannel stateChannel;
+	private EventChannel deviceChannel;
     private BluetoothManager mBluetoothManager;
     private BluetoothAdapter mBluetoothAdapter;
 
@@ -88,7 +94,7 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
     private Result pendingResult;
     private ArrayList<String> macDeviceScanned = new ArrayList<>();
     private boolean allowDuplicates = false;
-
+	private BluetoothDeviceCache mCache;
     /** Plugin registration. */
     public static void registerWith(Registrar registrar) {
         if (instance == null) {
@@ -154,7 +160,9 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
             channel = new MethodChannel(messenger, NAMESPACE + "/methods");
             channel.setMethodCallHandler(this);
             stateChannel = new EventChannel(messenger, NAMESPACE + "/state");
+			deviceChannel = new EventChannel(messenger, NAMESPACE+"/device");
             stateChannel.setStreamHandler(stateHandler);
+			deviceChannel.setStreamHandler(deviceHandler);
             mBluetoothManager = (BluetoothManager) application.getSystemService(Context.BLUETOOTH_SERVICE);
             mBluetoothAdapter = mBluetoothManager.getAdapter();
             if (registrar != null) {
@@ -176,6 +184,8 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
         channel = null;
         stateChannel.setStreamHandler(null);
         stateChannel = null;
+        deviceChannel.setStreamHandler(null);
+        deviceChannel = null;
         mBluetoothAdapter = null;
         mBluetoothManager = null;
         application = null;
@@ -255,6 +265,15 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
                 startScan(call, result);
                 break;
             }
+			case "locationEnable":{
+                try {
+                    LocationManager locationManager = (LocationManager) activity.getSystemService(Context.LOCATION_SERVICE);
+                    boolean gps = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER);
+                    result.success(gps);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
 
             case "stopScan":
             {
@@ -265,19 +284,44 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
 
             case "getConnectedDevices":
             {
-                List<BluetoothDevice> devices = mBluetoothManager.getConnectedDevices(BluetoothProfile.GATT);
+                Set<BluetoothDevice> devices = mBluetoothAdapter.getBondedDevices();
                 Protos.ConnectedDevicesResponse.Builder p = Protos.ConnectedDevicesResponse.newBuilder();
-                for(BluetoothDevice d : devices) {
-                    p.addDevices(ProtoMaker.from(d));
+                for (BluetoothDevice device : devices) {
+                    try {
+                        boolean isConnected = (boolean) MethodUtils.invokeMethod(device,"isConnected");
+                        if (isConnected){
+                            p.addDevices(ProtoMaker.from(device));
+                        }
+                    } catch (NoSuchMethodException e) {
+                        e.printStackTrace();
+                    } catch (IllegalAccessException e) {
+                        e.printStackTrace();
+                    } catch (InvocationTargetException e) {
+                        e.printStackTrace();
+                    }
                 }
                 result.success(p.build().toByteArray());
                 log(LogLevel.EMERGENCY, "mDevices size: " + mDevices.size());
                 break;
             }
 
+            case "getBondDevices":
+            {
+                Set<BluetoothDevice> devices = mBluetoothManager.getAdapter().getBondedDevices();
+                Protos.ConnectedDevicesResponse.Builder p = Protos.ConnectedDevicesResponse.newBuilder();
+                for(BluetoothDevice d : devices) {
+                    p.addDevices(ProtoMaker.from(d));
+                }
+                result.success(p.build().toByteArray());
+//                log(LogLevel.EMERGENCY, "mBondDevices size: " + devices.size());
+                break;
+            }
+
             case "connect":
             {
-                byte[] data = call.arguments();
+                List  args= call.arguments();
+                byte[] data = (byte[]) args.get(0);
+                boolean isBond= (boolean) args.get(1);
                 Protos.ConnectRequest options;
                 try {
                     options = Protos.ConnectRequest.newBuilder().mergeFrom(data).build();
@@ -313,18 +357,22 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
                     gattServer = device.connectGatt(activity, options.getAndroidAutoConnect(), mGattCallback);
                 }
                 mDevices.put(deviceId, new BluetoothDeviceCache(gattServer));
+                if (isBond) device.createBond();
                 result.success(null);
                 break;
             }
 
             case "disconnect":
             {
-                String deviceId = (String)call.arguments;
+                List  args= call.arguments();
+                String deviceId = (String)args.get(0);
+                boolean isRemoveBond = (boolean)args.get(1);
                 BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(deviceId);
                 int state = mBluetoothManager.getConnectionState(device, BluetoothProfile.GATT);
-                BluetoothDeviceCache cache = mDevices.remove(deviceId);
-                if(cache != null) {
-                    BluetoothGatt gattServer = cache.gatt;
+                mCache = mDevices.remove(deviceId);
+                if(mCache != null) {
+                    BluetoothGatt gattServer = mCache.gatt;
+                    if (isRemoveBond) removeBond(device);
                     gattServer.disconnect();
                     if(state == BluetoothProfile.STATE_DISCONNECTED) {
                         gattServer.close();
@@ -637,6 +685,15 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
         }
     }
 
+    private void removeBond(BluetoothDevice device) {
+        try {
+            Method m = device.getClass().getMethod("removeBond",null);
+            m.invoke(device, null);
+        } catch (Exception e) {
+            Log.e("removebond", e.getMessage());
+        }
+    }
+
     @Override
     public boolean onRequestPermissionsResult(
             int requestCode, String[] permissions, int[] grantResults) {
@@ -706,8 +763,10 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
                 if (BluetoothAdapter.ACTION_STATE_CHANGED.equals(action)) {
                     final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE,
                             BluetoothAdapter.ERROR);
+                    Log.d(TAG, "onReceive: "+state);
                     switch (state) {
                         case BluetoothAdapter.STATE_OFF:
+                            mDevices.clear();
                             sink.success(Protos.BluetoothState.newBuilder().setState(Protos.BluetoothState.State.OFF).build().toByteArray());
                             break;
                         case BluetoothAdapter.STATE_TURNING_OFF:
@@ -720,6 +779,20 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
                             sink.success(Protos.BluetoothState.newBuilder().setState(Protos.BluetoothState.State.TURNING_ON).build().toByteArray());
                             break;
                     }
+                }else if (BluetoothDevice.ACTION_BOND_STATE_CHANGED.equals(action)){
+                    int state = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE,
+                            BluetoothDevice.BOND_NONE);
+                    BluetoothDevice device =
+                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    if (BluetoothDevice.BOND_NONE == state){
+                        Log.d(TAG,  "state: " + state);
+
+                        if (mCache != null){
+                            mCache.gatt.close();
+                            mCache = null;
+                        }
+                    }
+
                 }
             }
         };
@@ -728,6 +801,7 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
         public void onListen(Object o, EventChannel.EventSink eventSink) {
             sink = eventSink;
             IntentFilter filter = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
+            filter.addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED);
             activity.registerReceiver(mReceiver, filter);
         }
 
@@ -736,6 +810,62 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
             sink = null;
             activity.unregisterReceiver(mReceiver);
         }
+    };
+
+    private final StreamHandler deviceHandler = new StreamHandler() {
+        private EventSink sink;
+        private BluetoothProfile mBluetoothProfile;
+
+        @Override
+        public void onListen(Object o, EventSink eventSink) {
+            sink = eventSink;
+            mBluetoothAdapter.getProfileProxy(activity, mProfileListener, 4);
+
+            IntentFilter intentFilter = new IntentFilter();
+            intentFilter.addAction(BluetoothDevice.ACTION_ACL_CONNECTED);
+            intentFilter.addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED);
+            activity.registerReceiver(mDeviceConnectionReceiver, intentFilter);
+        }
+
+        @Override
+        public void onCancel(Object o) {
+            mBluetoothAdapter.closeProfileProxy(4, mBluetoothProfile);
+            activity.unregisterReceiver(mDeviceConnectionReceiver);
+        }
+
+        final BluetoothProfile.ServiceListener mProfileListener = new BluetoothProfile.ServiceListener() {
+            @Override
+            public void onServiceConnected(int profile, BluetoothProfile proxy) {
+                mBluetoothProfile = proxy;
+
+                List<BluetoothDevice> devices = proxy.getConnectedDevices();
+                for(BluetoothDevice d : devices) {
+                    sink.success(ProtoMaker.from(d).toByteArray());
+                }
+            }
+
+            @Override
+            public void onServiceDisconnected(int profile) {
+                mBluetoothProfile = null;
+            }
+        };
+
+        final BroadcastReceiver mDeviceConnectionReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (intent == null) return;
+                Log.d(TAG, "mDeviceConnectionReceiver: " + intent);
+                switch (intent.getAction()) {
+                    case BluetoothDevice.ACTION_ACL_CONNECTED:
+                        final BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                        if (device != null) {
+                            sink.success(ProtoMaker.from(device).toByteArray());
+                        }
+                        break;
+                    default: break;
+                }
+            }
+        };
     };
 
     private void startScan(MethodCall call, Result result) {

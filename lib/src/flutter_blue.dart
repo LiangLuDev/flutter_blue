@@ -7,6 +7,7 @@ part of flutter_blue;
 class FlutterBlue {
   final MethodChannel _channel = const MethodChannel('$NAMESPACE/methods');
   final EventChannel _stateChannel = const EventChannel('$NAMESPACE/state');
+  final EventChannel _connectedDevice = const EventChannel('$NAMESPACE/device');
   final StreamController<MethodCall> _methodStreamController =
       new StreamController.broadcast(); // ignore: close_sinks
   Stream<MethodCall> get _methodStream => _methodStreamController
@@ -37,7 +38,7 @@ class FlutterBlue {
   Future<bool> get isOn => _channel.invokeMethod('isOn').then<bool>((d) => d);
 
   BehaviorSubject<bool> _isScanning = BehaviorSubject.seeded(false);
-  Stream<bool> get isScanning => _isScanning.stream;
+  BehaviorSubject<bool> get isScanning => _isScanning;
 
   BehaviorSubject<List<ScanResult>> _scanResults = BehaviorSubject.seeded([]);
   
@@ -79,6 +80,22 @@ class FlutterBlue {
       // Send the log level to the underlying platforms.
       setLogLevel(logLevel);
     }
+  }
+  
+    Stream<BluetoothDevice> getConnectedDevices() async* {
+    yield* _connectedDevice
+      .receiveBroadcastStream()
+      .map((buffer) => protos.BluetoothDevice.fromBuffer(buffer))
+      .map((p) => BluetoothDevice.fromProto(p));
+  }
+
+  /// Retrieve a list of connected devices
+  Future<List<BluetoothDevice>> get bondDevices {
+    return _channel
+        .invokeMethod('getBondDevices')
+        .then((buffer) => protos.ConnectedDevicesResponse.fromBuffer(buffer))
+        .then((p) => p.devices)
+        .then((p) => p.map((d) => BluetoothDevice.fromProto(d)).toList());
   }
 
   /// Starts a scan for Bluetooth Low Energy devices and returns a stream
@@ -143,6 +160,8 @@ class FlutterBlue {
       return result;
     });
   }
+  
+  Future<bool> locationEnable() =>  _channel.invokeMethod('locationEnable');
 
   /// Starts a scan and returns a future that will complete once the scan has finished.
   /// 
