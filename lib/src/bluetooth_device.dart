@@ -31,8 +31,8 @@ class BluetoothDevice {
     Timer timer;
     if (timeout != null) {
       timer = Timer(timeout, timeoutError = () {
-        disconnect();
-        throw TimeoutException('Failed to connect in time.', timeout);
+//        disconnect();
+//        throw TimeoutException('Failed to connect in time.', timeout);
       });
     }
 
