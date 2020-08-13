@@ -22,6 +22,7 @@ class BluetoothDevice {
     Duration timeout,
     bool autoConnect = true,
     bool isBond=false,
+    Function timeoutError
   }) async {
     var request = protos.ConnectRequest.create()
       ..remoteId = id.toString()
@@ -29,7 +30,7 @@ class BluetoothDevice {
 
     Timer timer;
     if (timeout != null) {
-      timer = Timer(timeout, () {
+      timer = Timer(timeout, timeoutError = () {
         disconnect();
         throw TimeoutException('Failed to connect in time.', timeout);
       });
