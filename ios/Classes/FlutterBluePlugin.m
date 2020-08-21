@@ -38,6 +38,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
 @property(nonatomic) NSMutableArray *servicesThatNeedDiscovered;
 @property(nonatomic) NSMutableArray *characteristicsThatNeedDiscovered;
 @property(nonatomic) LogLevel logLevel;
+@property(nonatomic) CBPeripheral *connectedPeripheral;
 @end
 
 @implementation FlutterBluePlugin
@@ -114,14 +115,23 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     NSString *remoteId = [request remoteId];
     @try {
       CBPeripheral *peripheral = [_scannedPeripherals objectForKey:remoteId];
-      if(peripheral == nil) {
-        @throw [FlutterError errorWithCode:@"connect"
-                                   message:@"Peripheral not found"
-                                   details:nil];
-      }
-      // TODO: Implement Connect options (#36)
-      [_centralManager connectPeripheral:peripheral options:nil];
-      result(nil);
+            if(peripheral == nil) {
+               CBPeripheral *tempPeripheral  = [self findPeripheral:remoteId];
+                if(tempPeripheral == nil) {
+                      @throw [FlutterError errorWithCode:@"connect"
+                                         message:@"Peripheral not found"
+                                         details:nil];
+                }else{
+                    _connectedPeripheral=tempPeripheral;
+                }
+            }
+            // TODO: Implement Connect options (#36)
+              if(peripheral == nil) {
+                  [_centralManager connectPeripheral:_connectedPeripheral options:nil];
+              }else{
+                  [_centralManager connectPeripheral:peripheral options:nil];
+              }
+            result(nil);
     } @catch(FlutterError *e) {
       result(e);
     }
@@ -391,8 +401,12 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
   NSLog(@"didDisconnectPeripheral");
   // Unregister self as delegate for peripheral, not working #42
   peripheral.delegate = nil;
-  
-  // Send connection state
+  NSInteger errorCode = -1;
+      if (error != nil) {
+          errorCode = error.code;
+      }
+    // Send connection state
+  [_channel invokeMethod:@"DeviceStateError" arguments:[NSNumber numberWithInt:errorCode]];
   [_channel invokeMethod:@"DeviceState" arguments:[self toFlutterData:[self toDeviceStateProto:peripheral state:peripheral.state]]];
 }
 
