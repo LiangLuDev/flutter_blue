@@ -301,7 +301,7 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
                     }
                 }
                 result.success(p.build().toByteArray());
-                log(LogLevel.EMERGENCY, "mDevices size: " + mDevices.size());
+//                log(LogLevel.EMERGENCY, "mDevices size: " + mDevices.size());
                 break;
             }
 
