@@ -108,6 +108,10 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
         instance.setup(registrar.messenger(), application, activity, registrar, null);
     }
 
+    public static FlutterBluePlugin getInstance(){
+        return instance;
+    }
+
     public FlutterBluePlugin() {}
 
     @Override
@@ -752,7 +756,7 @@ public class FlutterBluePlugin implements FlutterPlugin, ActivityAware, MethodCa
         return descriptor;
     }
 
-    private final StreamHandler stateHandler = new StreamHandler() {
+    public final StreamHandler stateHandler = new StreamHandler() {
         private EventSink sink;
 
         private final BroadcastReceiver mReceiver = new BroadcastReceiver() {

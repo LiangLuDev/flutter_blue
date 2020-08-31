@@ -12,4 +12,10 @@ public class EmbeddingV1Activity extends FlutterActivity {
     FlutterBluePlugin.registerWith(registrarFor("com.pauldemarco.flutter_blue.FlutterBluePlugin"));
     E2EPlugin.registerWith(registrarFor("dev.flutter.plugins.e2e.E2EPlugin"));
   }
+
+  @Override
+  protected void onDestroy() {
+    super.onDestroy();
+    FlutterBluePlugin.getInstance().stateHandler.onCancel(null);
+  }
 }
