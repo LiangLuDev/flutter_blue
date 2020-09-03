@@ -22,7 +22,7 @@ class BluetoothCharacteristic {
   }
 
   BehaviorSubject<List<int>> _value;
-  Stream<List<int>> get value => Rx.merge([
+  Stream<List<int>> get value => Observable.merge([
         _value.stream,
         _onValueChangedStream,
       ]);
@@ -139,6 +139,7 @@ class BluetoothCharacteristic {
         .then((success) => (!success)
             ? throw new Exception('Failed to write the characteristic')
             : null)
+//        .then((_) => _value.add(value))
         .then((_) => null);
   }
 
@@ -165,13 +166,9 @@ class BluetoothCharacteristic {
         .then((p) => new BluetoothCharacteristic.fromProto(p.characteristic))
         .then((c) {
       _updateDescriptors(c.descriptors);
+//      _value.add(c.lastValue);
       return (c.isNotifying == notify);
     });
-  }
-
-  @override
-  String toString() {
-    return 'BluetoothCharacteristic{uuid: $uuid, deviceId: $deviceId, serviceUuid: $serviceUuid, secondaryServiceUuid: $secondaryServiceUuid, properties: $properties, descriptors: $descriptors, value: ${_value?.value}';
   }
 }
 
@@ -213,9 +210,4 @@ class CharacteristicProperties {
         extendedProperties = p.extendedProperties,
         notifyEncryptionRequired = p.notifyEncryptionRequired,
         indicateEncryptionRequired = p.indicateEncryptionRequired;
-
-  @override
-  String toString() {
-    return 'CharacteristicProperties{broadcast: $broadcast, read: $read, writeWithoutResponse: $writeWithoutResponse, write: $write, notify: $notify, indicate: $indicate, authenticatedSignedWrites: $authenticatedSignedWrites, extendedProperties: $extendedProperties, notifyEncryptionRequired: $notifyEncryptionRequired, indicateEncryptionRequired: $indicateEncryptionRequired}';
-  }
 }

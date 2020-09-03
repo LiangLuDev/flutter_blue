@@ -95,11 +95,8 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
       NSString *u = [request.serviceUuidsArray objectAtIndex:i];
       uuids = [uuids arrayByAddingObject:[CBUUID UUIDWithString:u]];
     }
-    NSMutableDictionary<NSString *, id> *scanOpts = [NSMutableDictionary new];
-    if (request.allowDuplicates) {
-        [scanOpts setObject:[NSNumber numberWithBool:YES] forKey:CBCentralManagerScanOptionAllowDuplicatesKey];
-    }
-    [self->_centralManager scanForPeripheralsWithServices:uuids options:scanOpts];
+    // TODO: iOS Scan Options (#35)
+    [self->_centralManager scanForPeripheralsWithServices:uuids options:nil];
     result(nil);
   } else if([@"stopScan" isEqualToString:call.method]) {
     [self->_centralManager stopScan];
@@ -107,7 +104,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
   } else if([@"getConnectedDevices" isEqualToString:call.method]) {
     // Cannot pass blank UUID list for security reasons. Assume all devices have the Generic Access service 0x1800
     NSArray *periphs = [self->_centralManager retrieveConnectedPeripheralsWithServices:@[[CBUUID UUIDWithString:@"1800"]]];
-    NSLog(@"getConnectedDevices periphs size: %lu", [periphs count]);
+//    NSLog(@"getConnectedDevices periphs size: %d", [periphs count]);
     result([self toFlutterData:[self toConnectedDeviceResponseProto:periphs]]);
   } else if([@"connect" isEqualToString:call.method]) {
     FlutterStandardTypedData *data = [call arguments];
@@ -115,23 +112,23 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     NSString *remoteId = [request remoteId];
     @try {
       CBPeripheral *peripheral = [_scannedPeripherals objectForKey:remoteId];
-            if(peripheral == nil) {
-               CBPeripheral *tempPeripheral  = [self findPeripheral:remoteId];
-                if(tempPeripheral == nil) {
-                      @throw [FlutterError errorWithCode:@"connect"
-                                         message:@"Peripheral not found"
-                                         details:nil];
-                }else{
-                    _connectedPeripheral=tempPeripheral;
-                }
-            }
-            // TODO: Implement Connect options (#36)
-              if(peripheral == nil) {
-                  [_centralManager connectPeripheral:_connectedPeripheral options:nil];
-              }else{
-                  [_centralManager connectPeripheral:peripheral options:nil];
-              }
-            result(nil);
+      if(peripheral == nil) {
+         CBPeripheral *tempPeripheral  = [self findPeripheral:remoteId];
+          if(tempPeripheral == nil) {
+                @throw [FlutterError errorWithCode:@"connect"
+                                   message:@"Peripheral not found"
+                                   details:nil];
+          }else{
+              _connectedPeripheral=tempPeripheral;
+          }
+      }
+      // TODO: Implement Connect options (#36)
+        if(peripheral == nil) {
+            [_centralManager connectPeripheral:_connectedPeripheral options:nil];
+        }else{
+            [_centralManager connectPeripheral:peripheral options:nil];
+        }
+      result(nil);
     } @catch(FlutterError *e) {
       result(e);
     }
@@ -401,13 +398,14 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
   NSLog(@"didDisconnectPeripheral");
   // Unregister self as delegate for peripheral, not working #42
   peripheral.delegate = nil;
-  NSInteger errorCode = -1;
-      if (error != nil) {
-          errorCode = error.code;
-      }
-    // Send connection state
-  [_channel invokeMethod:@"DeviceStateError" arguments:[NSNumber numberWithInt:errorCode]];
-  [_channel invokeMethod:@"DeviceState" arguments:[self toFlutterData:[self toDeviceStateProto:peripheral state:peripheral.state]]];
+  
+    NSInteger errorCode = -1;
+    if (error != nil) {
+        errorCode = error.code;
+    }
+  // Send connection state
+    [_channel invokeMethod:@"DeviceStateError" arguments:[NSNumber numberWithInt:errorCode]];
+    [_channel invokeMethod:@"DeviceState" arguments:[self toFlutterData:[self toDeviceStateProto:peripheral state:peripheral.state]]];
 }
 
 - (void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {

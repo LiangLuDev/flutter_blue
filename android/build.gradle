@@ -11,17 +11,18 @@ gradle.buildFinished { buildResult ->
     }
 }
 
-group 'com.pauldemarco.flutter_blue'
+group 'com.blackshark.flutterblue'
 version '1.0-SNAPSHOT'
 
 buildscript {
     repositories {
         google()
         jcenter()
+        mavenLocal()
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:3.5.2'
+        classpath 'com.android.tools.build:gradle:3.3.0'
         classpath 'com.google.protobuf:protobuf-gradle-plugin:0.8.10'
     }
 }
@@ -30,6 +31,7 @@ rootProject.allprojects {
     repositories {
         google()
         jcenter()
+        mavenLocal()
     }
 }
 
@@ -45,6 +47,11 @@ android {
     }
     lintOptions {
         disable 'InvalidPackage'
+    }
+    dependencies {
+        // Required for local unit tests (JUnit 4 RTKLEFoundation_plus.RTKOTASDK_plus.framework)
+        testImplementation 'junit:junit:4.12'
+        implementation 'androidx.core:core:1.0.2'
     }
     sourceSets {
         main {
@@ -78,6 +85,4 @@ protobuf {
 
 dependencies {
     implementation 'com.google.protobuf:protobuf-lite:3.0.1'
-    implementation 'androidx.appcompat:appcompat:1.0.0'
-    api 'androidx.core:core:1.0.1'
 }
